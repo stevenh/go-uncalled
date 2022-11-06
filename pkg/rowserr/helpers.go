@@ -5,22 +5,14 @@ import (
 	"go/types"
 )
 
-// imports returns true if pkg imports path, false otherwise.
-func imports(pkg *types.Package, path string) bool {
-	for _, imp := range pkg.Imports() {
-		if imp.Path() == path {
-			return true
-		}
-	}
-	return false
-}
-
-// isRowsPtrType returns true if typ is a *database/sql.Rows, false otherwise.
-func isRowsPtrType(typ types.Type) bool {
+// isRowsPtrType returns true if typ is contained in rowTypes, false otherwise.
+func isRowsPtrType(typ types.Type, rowTypes map[string]struct{}) bool {
 	if typ == nil {
 		return false
 	}
-	return typ.String() == rowsPtrType
+
+	_, ok := rowTypes[typ.String()]
+	return ok
 }
 
 // rootIdent finds the root identifier x in a chain of selections x.y.z, or nil if not found.
