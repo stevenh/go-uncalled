@@ -9,5 +9,5 @@ import (
 )
 
 func main() {
-	singlechecker.Main(rowserr.Analyzer)
+	singlechecker.Main(rowserr.NewAnalyzer())
 }

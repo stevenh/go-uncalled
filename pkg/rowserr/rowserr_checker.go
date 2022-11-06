@@ -22,16 +22,20 @@ type rowsErrChecker struct {
 	// found is set to true if we found a call to our interested
 	// ident.Err().
 	found bool
+
+	// types is a map of all rows types to check.
+	types map[string]struct{}
 }
 
 // rowsErrCalled returns true if ident.Err() is called, false otherwise.
-func rowsErrCalled(pass *analysis.Pass, rows *ast.Ident, stmts []ast.Stmt) bool {
+func rowsErrCalled(pass *analysis.Pass, types map[string]struct{}, rows *ast.Ident, stmts []ast.Stmt) bool {
 	ec := &rowsErrChecker{
 		pass: pass,
 		identObjs: map[*ast.Object]struct{}{
 			rows.Obj: {},
 		},
 		called: make(map[*ast.Object]map[int]struct{}),
+		types:  types,
 	}
 
 	for _, s := range stmts {
@@ -81,7 +85,7 @@ func (ec *rowsErrChecker) rowsExpr(expr ast.Expr) bool {
 		return false // Unknown type.
 	}
 
-	return isRowsPtrType(tv.Type)
+	return isRowsPtrType(tv.Type, ec.types)
 }
 
 // dump dumps the details of node.
@@ -113,7 +117,7 @@ func (ec *rowsErrChecker) assignStmtFuncLit(stmt *ast.AssignStmt) {
 			}
 
 			for j, param := range f.Names {
-				if rowsErrCalled(ec.pass, param, lit.Body.List) {
+				if rowsErrCalled(ec.pass, ec.types, param, lit.Body.List) {
 					// Rows.Err was called for this parameter.
 					args := ec.called[ident.Obj]
 					if args == nil {
@@ -198,8 +202,8 @@ func (ec *rowsErrChecker) rowsErrCalled(call *ast.CallExpr, sel *ast.SelectorExp
 		return ec // Unknown type
 	}
 
-	if !isRowsPtrType(typ.Type) {
-		return ec // Type is not *database/sql.Rows.
+	if !isRowsPtrType(typ.Type, ec.types) {
+		return ec // Type is not a .Rows.
 	}
 
 	ident, ok := sel.X.(*ast.Ident)

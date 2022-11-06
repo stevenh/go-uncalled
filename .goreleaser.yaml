@@ -51,22 +51,22 @@ changelog:
   # Default is no groups.
   groups:
     - title: Features
-      regexp: '^[[:xdigit:]]+ (feat|feature)(\([[:word:]]+\))??!?:.+$'
+      regexp: '^.*(feat|feature)(\([[:word:]]+\))??!?:.+$'
       order: 0
     - title: 'Bug fixes'
-      regexp: '^[[:xdigit:]]+ fix(\([[:word:]]+\))??!?:.+$'
+      regexp: '^.*fix(\([[:word:]]+\))??!?:.+$'
       order: 1
     - title: 'Chores'
-      regexp: '^[[:xdigit:]]+ chore(\([[:word:]]+\))??!?:.+$'
+      regexp: '^.*chore(\([[:word:]]+\))??!?:.+$'
       order: 2
     - title: 'Quality'
-      regexp: '^[[:xdigit:]]+ (qa|test|tests)(\([[:word:]]+\))??!?:.+$'
+      regexp: '^.*(qa|test|tests)(\([[:word:]]+\))??!?:.+$'
       order: 3
     - title: 'Documentation'
-      regexp: '^[[:xdigit:]]+ (doc|docs)(\([[:word:]]+\))??!?:.+$'
+      regexp: '^.*(doc|docs)(\([[:word:]]+\))??!?:.+$'
       order: 4
     - title: 'Continuous Integration'
-      regexp: '^[[:xdigit:]]+ ci(\([[:word:]]+\))??!?:.+$'
+      regexp: '^.*ci(\([[:word:]]+\))??!?:.+$'
       order: 5
     - title: Other
       order: 999

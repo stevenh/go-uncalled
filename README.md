@@ -2,7 +2,7 @@
 
 [![Reference](https://pkg.go.dev/badge/github.com/stevenh/go-rowserr.svg)](https://pkg.go.dev/github.com/stevenh/go-rowserr) [![License](https://img.shields.io/badge/License-BSD_2--Clause-blue.svg)](https://opensource.org/licenses/BSD-2-Clause) [![Go Report Card](https://goreportcard.com/badge/github.com/stevenh/go-rowserr)](https://goreportcard.com/report/github.com/stevenh/go-rowserr)
 
-go-rowserr is a static analysis tool for golang which checks for missing [database/sql.Rows.Err()](https://pkg.go.dev/database/sql#Rows.Err) calls.
+go-rowserr is a static analysis tool for golang which checks for missing [Rows.Err()](https://pkg.go.dev/database/sql#Rows.Err) calls.
 
 It is compatible with both standard and generic functions as introduced by [golang](https://go.dev/) version [1.18](https://go.dev/doc/go1.18).
 
@@ -24,14 +24,31 @@ go vet -vettool=$(which rowserr) ./...
 test/bad.go:10:2: rows.Err() must be checked
 ```
 
+You can also run it directly:
+```bash
+rowserr ./...
+# github.com/stevenh/go-rowserr/test
+test/bad.go:10:2: rows.Err() must be checked
+```
+
+Additional package to check can be added using `-packages <pk1,pkg2...pkgN>`.
+
+The version can be checked with `-version`.
+
+By default this checks the following packages:
+
+- [database/sql](https://pkg.go.dev/database/sql)
+- [github.com/jmoiron/sqlx](https://pkg.go.dev/github.com/jmoiron/sqlx)
+
 ## Analyzer
 
-`rowserr` validates that code which uses [database/sql](https://pkg.go.dev/database/sql) to obtain [sql.Rows](https://pkg.go.dev/database/sql#Rows) calls [Rows.Err()](https://pkg.go.dev/database/sql#Rows.Err) as described by
+`rowserr` validates that code which uses [database/sql](https://pkg.go.dev/database/sql) and similar packages, to obtain [Rows](https://pkg.go.dev/database/sql#Rows) calls [Rows.Err()](https://pkg.go.dev/database/sql#Rows.Err) as described by
 
 - [sql.Rows.Next](https://pkg.go.dev/database/sql#Rows.Next)
 - [sql.Rows.NextResultSet](https://pkg.go.dev/database/sql#Rows.NextResultSet)
 
-The following code above is wrong, as it should check [Rows.Err()](https://pkg.go.dev/database/sql#Rows.Err) after [Rows.Next()](https://pkg.go.dev/database/sql#Rows.Next) returns false.
+The following code is wrong, as it should check [Rows.Err()](https://pkg.go.dev/database/sql#Rows.Err) after [Rows.Next()](https://pkg.go.dev/database/sql#Rows.Next) returns false.
+
 
 ```go
 rows, err := db.Query("select id from tb")
