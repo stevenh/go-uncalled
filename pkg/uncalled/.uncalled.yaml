@@ -14,5 +14,5 @@ rules:
           pointer: false
     expect:
       method: .Err
-      resultIndex: 0
+      result-index: 0
       args: []
