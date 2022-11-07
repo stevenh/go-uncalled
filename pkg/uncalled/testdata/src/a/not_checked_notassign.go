@@ -5,11 +5,11 @@ import (
 )
 
 func NotAssigned(db *sql.DB) {
-	db.Query("") // want "rows.Err\\(\\) must be checked"
+	db.Query("") // want "Rows.Err\\(\\) must be called"
 }
 
 func NotAssignedRows(db *sql.DB) {
-	_, err := db.Query("") // want "_.Err\\(\\) must be checked"
+	_, err := db.Query("") // want "_.Err\\(\\) must be called"
 	if err != nil {
 		// handle error
 	}

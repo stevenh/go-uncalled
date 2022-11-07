@@ -1,0 +1,18 @@
+rules:
+  - name: sql.Rows
+    disabled: false
+    severity: warning
+    packages:
+      - database/sql
+      - github.com/jmoiron/sqlx
+    call:
+      methods: []
+      results:
+        - type: .Rows
+          pointer: true
+        - type: error
+          pointer: false
+    expect:
+      method: .Err
+      resultIndex: 0
+      args: []

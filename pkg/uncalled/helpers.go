@@ -1,12 +1,12 @@
-package rowserr
+package uncalled
 
 import (
 	"go/ast"
 	"go/types"
 )
 
-// isRowsPtrType returns true if typ is contained in rowTypes, false otherwise.
-func isRowsPtrType(typ types.Type, rowTypes map[string]struct{}) bool {
+// containsType returns true if typ not nil and contained in rowTypes, false otherwise.
+func containsType(typ types.Type, rowTypes map[string]struct{}) bool {
 	if typ == nil {
 		return false
 	}
@@ -27,9 +27,8 @@ func rootIdent(n ast.Node) *ast.Ident {
 	}
 }
 
-// restOfBlock, given a traversal stack, finds the innermost containing
-// block and returns the suffix of its statements starting with the current
-// node.
+// restOfBlock, given a traversal stack, finds the innermost containing block
+// and returns the suffix of its statements starting with the current node.
 func restOfBlock(stack []ast.Node) []ast.Stmt {
 	for i := len(stack) - 1; i >= 0; i-- {
 		if b, ok := stack[i].(*ast.BlockStmt); ok {

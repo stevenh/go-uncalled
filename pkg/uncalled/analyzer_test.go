@@ -1,13 +1,13 @@
-package rowserr_test
+package uncalled_test
 
 import (
 	"testing"
 
-	"github.com/stevenh/go-rowserr/pkg/rowserr"
+	"github.com/stevenh/go-uncalled/pkg/uncalled"
 	"golang.org/x/tools/go/analysis/analysistest"
 )
 
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
-	analysistest.Run(t, testdata, rowserr.NewAnalyzer(), "a")
+	analysistest.Run(t, testdata, uncalled.NewAnalyzer(), "a")
 }

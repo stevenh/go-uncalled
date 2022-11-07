@@ -1,4 +1,4 @@
-package rowserr
+package uncalled
 
 import (
 	"go/ast"
@@ -7,39 +7,39 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
-// rowsErrChecker is an ast.Vistor which searches for a call to Rows.Err()
+// visitor is an ast.Vistor which searches for a call to Rows.Err()
 // if successful found is set to true, false otherwise.
-type rowsErrChecker struct {
+type visitor struct {
 	pass *analysis.Pass
 
 	// identObjs contains ident.Obj entries which match the interested ident.
 	identObjs map[*ast.Object]struct{}
 
-	// called maps literal function object to argument positions that
-	// resulted in a successful *database/sql.Rows.Err() call.
-	called map[*ast.Object]map[int]struct{}
+	// calledArgs maps literal function object to argument positions that
+	// resulted in a successful rule calls.
+	calledArgs map[*ast.Object]map[int]struct{}
 
 	// found is set to true if we found a call to our interested
 	// ident.Err().
 	found bool
 
-	// types is a map of all rows types to check.
-	types map[string]struct{}
+	// rule contains the rule to check against.
+	rule Rule
 }
 
-// rowsErrCalled returns true if ident.Err() is called, false otherwise.
-func rowsErrCalled(pass *analysis.Pass, types map[string]struct{}, rows *ast.Ident, stmts []ast.Stmt) bool {
-	ec := &rowsErrChecker{
+// visit returns true if ident.Err() is called, false otherwise.
+func visit(pass *analysis.Pass, rule Rule, ident *ast.Ident, stmts []ast.Stmt) bool {
+	ec := &visitor{
 		pass: pass,
 		identObjs: map[*ast.Object]struct{}{
-			rows.Obj: {},
+			ident.Obj: {},
 		},
-		called: make(map[*ast.Object]map[int]struct{}),
-		types:  types,
+		calledArgs: make(map[*ast.Object]map[int]struct{}),
+		rule:       rule,
 	}
 
 	for _, s := range stmts {
-		if ec.errCalled(s) {
+		if ec.walk(s) {
 			return true
 		}
 	}
@@ -47,15 +47,15 @@ func rowsErrCalled(pass *analysis.Pass, types map[string]struct{}, rows *ast.Ide
 	return false
 }
 
-// errCalled returns true if the given if statement checks rows.Err().
-func (ec *rowsErrChecker) errCalled(stmt ast.Stmt) bool {
+// walk returns true if the given if statement calls the rules expected method.
+func (ec *visitor) walk(stmt ast.Stmt) bool {
 	ast.Walk(ec, stmt)
 
 	return ec.found
 }
 
 // Visit implements ast.Visitor.
-func (ec *rowsErrChecker) Visit(node ast.Node) (w ast.Visitor) {
+func (ec *visitor) Visit(node ast.Node) (w ast.Visitor) {
 	if ec.found || node == nil {
 		return nil // Already found or walk complete
 	}
@@ -71,31 +71,31 @@ func (ec *rowsErrChecker) Visit(node ast.Node) (w ast.Visitor) {
 }
 
 // visitAssignStmt visits stmt.
-func (ec *rowsErrChecker) visitAssignStmt(stmt *ast.AssignStmt) (w ast.Visitor) {
+func (ec *visitor) visitAssignStmt(stmt *ast.AssignStmt) (w ast.Visitor) {
 	ec.assignStmtMatches(stmt)
 	ec.assignStmtFuncLit(stmt)
 
 	return ec
 }
 
-// rowsExpr returns true if expr represents a *database/sql.Rows, false otherwise.
-func (ec *rowsErrChecker) rowsExpr(expr ast.Expr) bool {
+// containsType returns true if expr represents on of our expected types, false otherwise.
+func (ec *visitor) containsType(expr ast.Expr) bool {
 	tv, ok := ec.pass.TypesInfo.Types[expr]
 	if !ok {
 		return false // Unknown type.
 	}
 
-	return isRowsPtrType(tv.Type, ec.types)
+	return containsType(tv.Type, ec.rule.types)
 }
 
 // dump dumps the details of node.
-func (ec *rowsErrChecker) dump(node ast.Node) {
+func (ec *visitor) dump(node ast.Node) {
 	ast.Print(token.NewFileSet(), node)
 }
 
 // assignStmtFuncLit checks stmt for functions that call *database/sql.Err().
 // If any calls are found they are registered in ec.called.
-func (ec *rowsErrChecker) assignStmtFuncLit(stmt *ast.AssignStmt) {
+func (ec *visitor) assignStmtFuncLit(stmt *ast.AssignStmt) {
 	for i, rhs := range stmt.Rhs {
 		lit, ok := rhs.(*ast.FuncLit)
 		if !ok {
@@ -112,17 +112,17 @@ func (ec *rowsErrChecker) assignStmtFuncLit(stmt *ast.AssignStmt) {
 		}
 
 		for _, f := range lit.Type.Params.List {
-			if !ec.rowsExpr(f.Type) {
-				continue // Not a *database/sql.Rows parameter.
+			if !ec.containsType(f.Type) {
+				continue // Not an expected parameter.
 			}
 
 			for j, param := range f.Names {
-				if rowsErrCalled(ec.pass, ec.types, param, lit.Body.List) {
-					// Rows.Err was called for this parameter.
-					args := ec.called[ident.Obj]
+				if visit(ec.pass, ec.rule, param, lit.Body.List) {
+					// Rule matched call for this parameter.
+					args := ec.calledArgs[ident.Obj]
 					if args == nil {
 						args = make(map[int]struct{})
-						ec.called[ident.Obj] = args
+						ec.calledArgs[ident.Obj] = args
 					}
 					args[j] = struct{}{}
 				}
@@ -133,7 +133,7 @@ func (ec *rowsErrChecker) assignStmtFuncLit(stmt *ast.AssignStmt) {
 
 // assignStmtMatches checks stmt for assignments from variables known to match the
 // identifier we're interested in. If any are found they registered in ec.matches.
-func (ec *rowsErrChecker) assignStmtMatches(stmt *ast.AssignStmt) {
+func (ec *visitor) assignStmtMatches(stmt *ast.AssignStmt) {
 	for i, rhs := range stmt.Rhs {
 		identRHS, ok := rhs.(*ast.Ident)
 		if !ok {
@@ -155,10 +155,10 @@ func (ec *rowsErrChecker) assignStmtMatches(stmt *ast.AssignStmt) {
 }
 
 // visitCallExpr visits call.
-func (ec *rowsErrChecker) visitCallExpr(call *ast.CallExpr) (w ast.Visitor) {
+func (ec *visitor) visitCallExpr(call *ast.CallExpr) (w ast.Visitor) {
 	switch t := call.Fun.(type) {
 	case *ast.SelectorExpr:
-		return ec.rowsErrCalled(call, t)
+		return ec.called(call, t)
 	case *ast.Ident:
 		return ec.visitCallExprIdent(call, t)
 	default:
@@ -168,7 +168,7 @@ func (ec *rowsErrChecker) visitCallExpr(call *ast.CallExpr) (w ast.Visitor) {
 
 // visitCallExprIdent checks if call resulted in any of interested idents having .Err() called.
 // If a match was found it returns nil, otherwise ec.
-func (ec *rowsErrChecker) visitCallExprIdent(call *ast.CallExpr, ident *ast.Ident) (w ast.Visitor) {
+func (ec *visitor) visitCallExprIdent(call *ast.CallExpr, ident *ast.Ident) (w ast.Visitor) {
 	for i, expr := range call.Args {
 		arg, ok := expr.(*ast.Ident)
 		if !ok {
@@ -176,9 +176,9 @@ func (ec *rowsErrChecker) visitCallExprIdent(call *ast.CallExpr, ident *ast.Iden
 		}
 		for obj := range ec.identObjs {
 			if arg.Obj == obj {
-				if _, ok := ec.called[ident.Obj][i]; ok {
+				if _, ok := ec.calledArgs[ident.Obj][i]; ok {
 					ec.found = true
-					return nil // Parameter called .Err().
+					return nil // Expected function was called.
 				}
 			}
 		}
@@ -187,14 +187,10 @@ func (ec *rowsErrChecker) visitCallExprIdent(call *ast.CallExpr, ident *ast.Iden
 	return ec
 }
 
-// rowsErrCalled checks if call was a call to our interested variable.
-func (ec *rowsErrChecker) rowsErrCalled(call *ast.CallExpr, sel *ast.SelectorExpr) (w ast.Visitor) {
-	if len(call.Args) != 0 {
-		return ec // Not a no argument call.
-	}
-
-	if sel.Sel.Name != errMethod {
-		return ec // Method not Err.
+// called checks if call was a call to our interested variable.
+func (ec *visitor) called(call *ast.CallExpr, sel *ast.SelectorExpr) (w ast.Visitor) {
+	if !ec.rule.Expect.matches(call, sel.Sel.Name) {
+		return ec // Doesn't match method name or args.
 	}
 
 	typ, ok := ec.pass.TypesInfo.Types[sel.X]
@@ -202,8 +198,8 @@ func (ec *rowsErrChecker) rowsErrCalled(call *ast.CallExpr, sel *ast.SelectorExp
 		return ec // Unknown type
 	}
 
-	if !isRowsPtrType(typ.Type, ec.types) {
-		return ec // Type is not a .Rows.
+	if !containsType(typ.Type, ec.rule.types) {
+		return ec // Type doesn't match.
 	}
 
 	ident, ok := sel.X.(*ast.Ident)
@@ -212,10 +208,10 @@ func (ec *rowsErrChecker) rowsErrCalled(call *ast.CallExpr, sel *ast.SelectorExp
 	}
 
 	if _, ok := ec.identObjs[ident.Obj]; !ok {
-		return ec // Call receiver didn't match rowsObj.
+		return ec // Call receiver didn't match one of our expected types.
 	}
 
-	// Rows.Err() was called.
+	// Expected function was called.
 	ec.found = true
 
 	return nil

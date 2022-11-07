@@ -1,48 +1,48 @@
-# go-rowserr
+# go-uncalled
 
-[![Reference](https://pkg.go.dev/badge/github.com/stevenh/go-rowserr.svg)](https://pkg.go.dev/github.com/stevenh/go-rowserr) [![License](https://img.shields.io/badge/License-BSD_2--Clause-blue.svg)](https://opensource.org/licenses/BSD-2-Clause) [![Go Report Card](https://goreportcard.com/badge/github.com/stevenh/go-rowserr)](https://goreportcard.com/report/github.com/stevenh/go-rowserr)
+[![Reference](https://pkg.go.dev/badge/github.com/stevenh/go-uncalled.svg)](https://pkg.go.dev/github.com/stevenh/go-uncalled) [![License](https://img.shields.io/badge/License-BSD_2--Clause-blue.svg)](https://opensource.org/licenses/BSD-2-Clause) [![Go Report Card](https://goreportcard.com/badge/github.com/stevenh/go-uncalled)](https://goreportcard.com/report/github.com/stevenh/go-uncalled)
 
-go-rowserr is a static analysis tool for golang which checks for missing [Rows.Err()](https://pkg.go.dev/database/sql#Rows.Err) calls.
+go-uncalled is a static analysis tool for golang which checks for missing calls.
 
 It is compatible with both standard and generic functions as introduced by [golang](https://go.dev/) version [1.18](https://go.dev/doc/go1.18).
 
 ## Install
 
-You can install `rowserr` cmd using `go install` command.
+You can install the `uncalled` cmd using `go install` command.
 
 ```bash
-go install github.com/stevenh/go-rowserr/cmd/rowserr@latest
+go install github.com/stevenh/go-uncalled/cmd/uncalled@latest
 ```
 
 ## How to use
 
-You run `rowserr` with [go vet](https://pkg.go.dev/cmd/vet).
+You run `uncalled` with [go vet](https://pkg.go.dev/cmd/vet).
 
 ```bash
-go vet -vettool=$(which rowserr) ./...
-# github.com/stevenh/go-rowserr/test
-test/bad.go:10:2: rows.Err() must be checked
+go vet -vettool=$(which uncalled) ./...
+# github.com/stevenh/go-uncalled/test
+test/bad.go:10:2: rows.Err() must be called
 ```
 
-You can also run it directly:
+Or run it directly.
 ```bash
-rowserr ./...
-# github.com/stevenh/go-rowserr/test
-test/bad.go:10:2: rows.Err() must be checked
+uncalled ./...
+# github.com/stevenh/go-uncalled/test
+test/bad.go:10:2: rows.Err() must be called
 ```
 
-Additional package to check can be added using `-packages <pk1,pkg2...pkgN>`.
+A custom configuration can be loaded using `-config <filename>`.
 
 The version can be checked with `-version`.
 
-By default this checks the following packages:
-
-- [database/sql](https://pkg.go.dev/database/sql)
-- [github.com/jmoiron/sqlx](https://pkg.go.dev/github.com/jmoiron/sqlx)
+By default it includes the rules in:
+[pkg/uncalled/.uncalled.yaml](pkg/uncalled/.uncalled.yaml)
 
 ## Analyzer
 
-`rowserr` validates that code which uses [database/sql](https://pkg.go.dev/database/sql) and similar packages, to obtain [Rows](https://pkg.go.dev/database/sql#Rows) calls [Rows.Err()](https://pkg.go.dev/database/sql#Rows.Err) as described by
+`uncalled` validates that code to ensure expected calls are made.
+
+Its default config checks calls to [database/sql](https://pkg.go.dev/database/sql) and similar packages, that obtain [Rows](https://pkg.go.dev/database/sql#Rows) calls [Rows.Err()](https://pkg.go.dev/database/sql#Rows.Err) as described by
 
 - [sql.Rows.Next](https://pkg.go.dev/database/sql#Rows.Next)
 - [sql.Rows.NextResultSet](https://pkg.go.dev/database/sql#Rows.NextResultSet)
@@ -76,7 +76,7 @@ if err = rows.Err(); err != nil {
 }
 ```
 
-`rowserr` helps uncover such errors which will result in incomplete data if an error is triggered while processing rows.
+`uncalled` helps uncover such errors which will result in incomplete data if an error is triggered while processing rows.
 This can happen when a connection becomes invalid, this causes [Rows.Next()](https://pkg.go.dev/database/sql#Rows.Next) or [sql.Rows.NextResultSet](https://pkg.go.dev/database/sql#Rows.NextResultSet) to return false without processing all rows.
 
 ## Inspired by
