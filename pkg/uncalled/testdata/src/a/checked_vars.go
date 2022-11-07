@@ -25,7 +25,7 @@ func CheckedVars(db *sql.DB) {
 		fmt.Fprint(io.Discard, err)
 	}
 
-	rows3, err = db.Query("") // want "rows3.Err\\(\\) must be checked"
+	rows3, err = db.Query("") // want "rows3.Err\\(\\) must be called"
 	_ = rowsX3.Err()
 	if err != nil {
 		// handle error

@@ -1,19 +1,19 @@
 //go:build plugin
 
-// Command rowserr is a plugin which checks for missing database/sql.Rows.Err() calls.
+// Command uncalled is a plugin which checks for missing calls.
 package main
 
 import (
-	"github.com/stevenh/go-rowserr/pkg/rowserr"
+	"github.com/stevenh/go-uncalled/pkg/uncalled"
 	"golang.org/x/tools/go/analysis"
 )
 
 type analyzerPlugin struct{}
 
-// GetAnalyzers returns rowserr Analyzer.
+// GetAnalyzers returns uncalled Analyzer.
 func (analyzerPlugin) GetAnalyzers() []*analysis.Analyzer {
 	return []*analysis.Analyzer{
-		rowserr.Analyzer,
+		uncalled.NewAnalyzer(),
 	}
 }
 
