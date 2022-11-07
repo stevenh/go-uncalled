@@ -32,6 +32,7 @@ type Rule struct {
 	types map[string]struct{}
 }
 
+// expects returns the expected string based on ident.
 func (r Rule) expects(ident string) string {
 	if ident == "" {
 		ident = strings.TrimLeft(r.Call.Results[r.Expect.ResultIndex].Type, ".")
@@ -158,7 +159,7 @@ func (r Result) name(pkg string) string {
 // Expect is the expected call for a Rule.
 type Expect struct {
 	Method      string
-	ResultIndex int `yaml:"resultIndex" mapstructure:"resultIndex"`
+	ResultIndex int `yaml:"result-index" mapstructure:"result-index"`
 	Args        []string
 }
 
