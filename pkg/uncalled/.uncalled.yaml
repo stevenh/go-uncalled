@@ -1,6 +1,7 @@
 # Sets the default category used to report rules which don't specify one.
 default-category: uncalled
 rules:
+  # Check for missing sql Rows.Err() calls.
   - name: sql-rows-err
     disabled: false
     category: sql
@@ -16,6 +17,7 @@ rules:
           args: []
       - type: error
         pointer: false
+  # Check for missing http Reponse.Body.Close() calls.
   - name: http-response-body-close
     disabled: false
     category: http
@@ -30,6 +32,7 @@ rules:
           args: []
       - type: error
         pointer: false
+  # Check for missing context CancelFunc() calls.
   - name: context-cancel
     disabled: false
     category: context
