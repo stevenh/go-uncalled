@@ -165,22 +165,28 @@ func (ec *visitor) assignStmtMatches(stmt *ast.AssignStmt) {
 func (ec *visitor) visitCallExpr(call *ast.CallExpr) (w ast.Visitor) {
 	switch t := call.Fun.(type) {
 	case *ast.SelectorExpr:
-		return ec.called(call, t)
+		return ec.visitCallNode(call, t)
 	case *ast.Ident:
-		return ec.visitCallExprIdent(call, t)
+		return ec.visitCallIdent(call, t)
 	default:
 		return ec
 	}
 }
 
-// visitCallExprIdent checks if call resulted in any of interested idents having .Err() called.
+// visitCallIdent checks if call resulted in any of interested idents having
+// the expected call called.
 // If a match was found it returns nil, otherwise ec.
-func (ec *visitor) visitCallExprIdent(call *ast.CallExpr, ident *ast.Ident) (w ast.Visitor) {
+func (ec *visitor) visitCallIdent(call *ast.CallExpr, ident *ast.Ident) (w ast.Visitor) {
+	if ec.visitCallNode(call, ident) == nil {
+		return nil // Call to the ident.
+	}
+
 	for i, expr := range call.Args {
 		arg, ok := expr.(*ast.Ident)
 		if !ok {
 			continue // Not an ident arg.
 		}
+
 		for obj := range ec.identObjs {
 			if arg.Obj == obj {
 				if _, ok := ec.calledArgs[ident.Obj][i]; ok {
@@ -194,26 +200,36 @@ func (ec *visitor) visitCallExprIdent(call *ast.CallExpr, ident *ast.Ident) (w a
 	return ec
 }
 
-// called checks if call was a call to our interested variable.
-func (ec *visitor) called(call *ast.CallExpr, sel *ast.SelectorExpr) (w ast.Visitor) {
-	parts := ec.selName(sel)
+// visitCallNode checks if call was a call to our interested variable.
+func (ec *visitor) visitCallNode(call *ast.CallExpr, node ast.Node) (w ast.Visitor) {
+	parts := names(node)
+	if parts == nil {
+		ec.log.Error().Msgf("node %#v: nil name", node)
+		return ec
+	}
+
 	name := strings.Join(parts[1:], ".")
 	matches := ec.rule.matchesCall(call, name)
 	ec.log.Debug().
 		Bool("matches", matches).
-		Str("sel", name).
-		Msg("called")
+		Str("call", name).
+		Str("name", strings.Join(parts, ".")).
+		Msg("matchesCall")
 	if !matches {
 		return ec // Doesn't match method name or args.
 	}
 
-	ident := rootIdent(sel)
+	ident := rootIdent(node)
 	typ, ok := ec.pass.TypesInfo.Types[ident]
 	if !ok {
 		return ec // Unknown type
 	}
 
-	name = strings.Join([]string{typ.Type.String(), name}, ".")
+	if name == "" {
+		name = typ.Type.String()
+	} else {
+		name = typ.Type.String() + "." + name
+	}
 	if _, ok := ec.rule.expectedCalls[name]; !ok {
 		return ec // Type doesn't match.
 	}
@@ -226,16 +242,4 @@ func (ec *visitor) called(call *ast.CallExpr, sel *ast.SelectorExpr) (w ast.Visi
 	ec.found = true
 
 	return nil
-}
-
-func (ec *visitor) selName(sel *ast.SelectorExpr) []string {
-	switch t := sel.X.(type) {
-	case *ast.SelectorExpr:
-		return append(ec.selName(t), sel.Sel.String())
-	case *ast.Ident:
-		return []string{t.String(), sel.Sel.String()}
-	default:
-		ec.log.Warn().Msgf("unexepected sel.X type %T", t)
-		return []string{sel.Sel.String()}
-	}
 }

@@ -15,6 +15,7 @@ func Test(t *testing.T) {
 		uncalled.NewAnalyzer(
 			uncalled.TestWriter(t),
 		),
+		"./context",
 		"./database/sql/rows/err",
 		"./net/http/request/body/close",
 	)

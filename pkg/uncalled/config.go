@@ -99,11 +99,12 @@ func (r *Rule) validate() error {
 		return fmt.Errorf("rule %q: no call results", r.Name)
 	}
 
-	for _, res := range r.Results {
+	for i, res := range r.Results {
 		if res.Expect != nil {
 			if r.expects != nil {
 				return fmt.Errorf("rule %q: more than one result expecting a method", r.Name)
 			}
+			res.idx = i
 			r.expects = res
 		}
 	}
@@ -174,6 +175,7 @@ type Result struct {
 	// If not specified no check it performed.
 	Expect *Expect
 
+	idx   int
 	match resultMatcher
 }
 
