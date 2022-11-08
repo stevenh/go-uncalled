@@ -18,10 +18,10 @@ const (
 //go:embed .uncalled.yaml
 var defaultConfig []byte
 
-// DefaultConfig returns the default embedded configuration.
-func DefaultConfig() *Config {
-	c := &Config{}
-	yaml.Unmarshal(defaultConfig, c) //nolint: errcheck
+// DefaultConfig returns a copy of the default embedded configuration.
+func DefaultConfig() Config {
+	c := Config{}
+	yaml.Unmarshal(defaultConfig, &c) //nolint: errcheck
 	return c
 }
 
