@@ -25,6 +25,7 @@ test/bad.go:10:2: rows.Err() must be called
 ```
 
 Or run it directly.
+
 ```bash
 uncalled ./...
 # github.com/stevenh/go-uncalled/test
@@ -48,7 +49,6 @@ Its default config checks calls to [database/sql](https://pkg.go.dev/database/sq
 - [sql.Rows.NextResultSet](https://pkg.go.dev/database/sql#Rows.NextResultSet)
 
 The following code is wrong, as it should check [Rows.Err()](https://pkg.go.dev/database/sql#Rows.Err) after [Rows.Next()](https://pkg.go.dev/database/sql#Rows.Next) returns false.
-
 
 ```go
 rows, err := db.Query("select id from tb")

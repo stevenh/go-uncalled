@@ -1,4 +1,4 @@
-package a
+package uncalled_test
 
 import (
 	"database/sql"
@@ -6,7 +6,7 @@ import (
 	"io"
 )
 
-func NotCheckedVars(db *sql.DB) {
+func NotCalledVars(db *sql.DB) {
 	rows, err := db.Query("") // want "rows.Err\\(\\) must be called"
 	for rows.Next() {
 		// Handle row.

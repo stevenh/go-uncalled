@@ -1,6 +1,6 @@
 //go:build go1.18
 
-package a
+package uncalled_test
 
 import (
 	"database/sql"
@@ -8,9 +8,9 @@ import (
 	"io/ioutil"
 )
 
-var _ = CheckedGeneric[int64]
+var _ = CalledGeneric[int64]
 
-func CheckedGeneric[T ~int64](db *sql.DB, a T) {
+func CalledGeneric[T ~int64](db *sql.DB, a T) {
 	rows, _ := db.Query("select id from tb")
 	for rows.Next() {
 		// Handle row.
@@ -21,7 +21,7 @@ func CheckedGeneric[T ~int64](db *sql.DB, a T) {
 	}
 }
 
-func CheckedGenericAssign[T ~int64](db *sql.DB, a T) {
+func CalledGenericAssign[T ~int64](db *sql.DB, a T) {
 	rows, _ := db.Query("select id from tb")
 	for rows.Next() {
 		// Handle row.
@@ -32,7 +32,7 @@ func CheckedGenericAssign[T ~int64](db *sql.DB, a T) {
 	}
 }
 
-func CheckedGenericDefer[T ~int64](db *sql.DB, a T) {
+func CalledGenericDefer[T ~int64](db *sql.DB, a T) {
 	rows, _ := db.Query("select id from tb")
 	for rows.Next() {
 		// Handle row.

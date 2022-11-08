@@ -1,4 +1,4 @@
-package a
+package uncalled_test
 
 import (
 	"database/sql"
@@ -6,13 +6,13 @@ import (
 	"io/ioutil"
 )
 
-func CheckedAssign(db *sql.DB) {
+func Called(db *sql.DB) {
 	rows, _ := db.Query("select id from tb")
 	for rows.Next() {
 		// Handle row.
 	}
-	if err := rows.Err(); err != nil {
+	if rows.Err() != nil {
 		// Handle error.
-		fmt.Fprintln(ioutil.Discard, err)
+		fmt.Fprintln(ioutil.Discard, "error")
 	}
 }

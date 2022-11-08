@@ -3,7 +3,9 @@ package uncalled
 import (
 	"go/ast"
 	"go/token"
+	"strings"
 
+	"github.com/rs/zerolog"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -25,10 +27,14 @@ type visitor struct {
 
 	// rule contains the rule to check against.
 	rule Rule
+
+	// log is the logger to use for debugging.
+	log zerolog.Logger
 }
 
 // visit returns true if ident.Err() is called, false otherwise.
-func visit(pass *analysis.Pass, rule Rule, ident *ast.Ident, stmts []ast.Stmt) bool {
+func visit(pass *analysis.Pass, log zerolog.Logger, rule Rule, ident *ast.Ident, stmts []ast.Stmt) bool {
+	log.Debug().Stringer("ident", ident).Msg("visit")
 	ec := &visitor{
 		pass: pass,
 		identObjs: map[*ast.Object]struct{}{
@@ -36,6 +42,7 @@ func visit(pass *analysis.Pass, rule Rule, ident *ast.Ident, stmts []ast.Stmt) b
 		},
 		calledArgs: make(map[*ast.Object]map[int]struct{}),
 		rule:       rule,
+		log:        log,
 	}
 
 	for _, s := range stmts {
@@ -85,7 +92,7 @@ func (ec *visitor) containsType(expr ast.Expr) bool {
 		return false // Unknown type.
 	}
 
-	return containsType(tv.Type, ec.rule.types)
+	return containsType(tv.Type, ec.rule.expectedTypes)
 }
 
 // dump dumps the details of node.
@@ -117,7 +124,7 @@ func (ec *visitor) assignStmtFuncLit(stmt *ast.AssignStmt) {
 			}
 
 			for j, param := range f.Names {
-				if visit(ec.pass, ec.rule, param, lit.Body.List) {
+				if visit(ec.pass, ec.log, ec.rule, param, lit.Body.List) {
 					// Rule matched call for this parameter.
 					args := ec.calledArgs[ident.Obj]
 					if args == nil {
@@ -189,30 +196,46 @@ func (ec *visitor) visitCallExprIdent(call *ast.CallExpr, ident *ast.Ident) (w a
 
 // called checks if call was a call to our interested variable.
 func (ec *visitor) called(call *ast.CallExpr, sel *ast.SelectorExpr) (w ast.Visitor) {
-	if !ec.rule.Expect.matches(call, sel.Sel.Name) {
+	parts := ec.selName(sel)
+	name := strings.Join(parts[1:], ".")
+	matches := ec.rule.Expect.matches(call, name)
+	ec.log.Debug().
+		Bool("matches", matches).
+		Str("sel", name).
+		Msg("called")
+	if !matches {
 		return ec // Doesn't match method name or args.
 	}
 
-	typ, ok := ec.pass.TypesInfo.Types[sel.X]
+	ident := rootIdent(sel)
+	typ, ok := ec.pass.TypesInfo.Types[ident]
 	if !ok {
 		return ec // Unknown type
 	}
 
-	if !containsType(typ.Type, ec.rule.types) {
+	name = strings.Join([]string{typ.Type.String(), name}, ".")
+	if _, ok := ec.rule.expectedCalls[name]; !ok {
 		return ec // Type doesn't match.
 	}
 
-	ident, ok := sel.X.(*ast.Ident)
-	if !ok {
-		return ec // Not an call to receiver.func.
-	}
-
 	if _, ok := ec.identObjs[ident.Obj]; !ok {
-		return ec // Call receiver didn't match one of our expected types.
+		return ec // Call receiver didn't match an expected objects.
 	}
 
 	// Expected function was called.
 	ec.found = true
 
 	return nil
+}
+
+func (ec *visitor) selName(sel *ast.SelectorExpr) []string {
+	switch t := sel.X.(type) {
+	case *ast.SelectorExpr:
+		return append(ec.selName(t), sel.Sel.String())
+	case *ast.Ident:
+		return []string{t.String(), sel.Sel.String()}
+	default:
+		ec.log.Warn().Msgf("unexepected sel.X type %T", t)
+		return []string{sel.Sel.String()}
+	}
 }

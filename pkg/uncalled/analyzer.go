@@ -8,6 +8,7 @@ import (
 	"go/types"
 	"os"
 
+	"github.com/rs/zerolog"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
@@ -42,39 +43,82 @@ false without processing all rows.`
 // Option represents an Analyzer option.
 type Option func(*analyzer) error
 
-// ConfigFile is Analyzer option which configures the config by
-// loading it from file.
+// ConfigFile is an Analyzer option which loads its config from file.
+// Default: embedded config.
 func ConfigFile(file string) Option {
-	return func(r *analyzer) error {
-		return r.load(file)
+	return func(a *analyzer) error {
+		return a.cfg.load(file)
 	}
 }
 
-// ConfigOpt is Analyzer option which configures the config by
-// specifying it directly.
+// ConfigOpt is an Analyzer option which specifies the config to use.
+// Default: embedded config.
 func ConfigOpt(cfg *Config) Option {
-	return func(r *analyzer) error {
-		r.cfg = cfg
+	return func(a *analyzer) error {
+		// Take a copy so we don't alter the original.
+		cpy := *cfg
+		a.cfg = &cpy
 		return nil
 	}
 }
 
-// NewAnalyzer returns a new Analyzer which checks the passed
-// packages in addition to calls.
+// LogLevel is an Analyzer option which configures its log level.
+// Default: info.
+func LogLevel(level string) Option {
+	return func(a *analyzer) error {
+		lvl, err := zerolog.ParseLevel(level)
+		if err != nil {
+			return fmt.Errorf("parse level %q: %w", level, err)
+		}
+
+		a.log = a.log.Level(lvl)
+
+		return nil
+	}
+}
+
+// TestWriter is an Analyzer option which configures its
+// log to use t.
+// Default: os.Stderr.
+func TestWriter(t zerolog.TestingLog) Option {
+	return func(a *analyzer) error {
+		a.log = a.log.Output(zerolog.TestWriter{T: t, Frame: 6})
+		return nil
+	}
+}
+
+// NewAnalyzer returns a new Analyzer configured with options
+// that checks for missing calls.
 func NewAnalyzer(options ...Option) *analysis.Analyzer {
-	r := &analyzer{options: options}
+	l := &loader{
+		options: options,
+		log: log{
+			Logger: zerolog.New(
+				zerolog.ConsoleWriter{
+					Out: os.Stderr,
+					FormatTimestamp: func(any) string {
+						return ""
+					},
+				},
+			).Level(zerolog.InfoLevel).
+				With().
+				Timestamp().
+				Logger(),
+		},
+	}
 	a := &analysis.Analyzer{
 		Name: name,
 		Doc:  doc,
-		Run:  r.run,
+		Run:  l.run,
 		Requires: []*analysis.Analyzer{
 			inspect.Analyzer,
 		},
 	}
 
 	a.Flags.Init(a.Name, flag.ExitOnError)
-	a.Flags.Var(r, "config", "configuration file to load")
+	a.Flags.Var(l, "config", "configuration file to load")
 	a.Flags.Var(version{}, "version", "print version and exit")
+	a.Flags.Var(&l.log, "verbose", "increases the log level")
 	return a
 }
 
@@ -83,34 +127,46 @@ type analyzer struct {
 	pass    *analysis.Pass
 	options []Option
 	cfg     *Config
-}
-
-func (a *analyzer) load(file string) error {
-	f, err := os.Open(file)
-	if err != nil {
-		return fmt.Errorf("load config: %w", err)
-	}
-	defer f.Close()
-
-	a.cfg = &Config{}
-	dec := yaml.NewDecoder(f)
-	if err := dec.Decode(a.cfg); err != nil {
-		return fmt.Errorf("decode config: %q: %w", file, err)
-	}
-
-	return nil
+	log     zerolog.Logger
 }
 
 // init initialises r to check packages.
 func (a *analyzer) init(imports map[string]struct{}) error {
 	if a.cfg == nil {
 		// No config specified use default.
+		a.log.Debug().Msg("load default config")
 		a.cfg = &Config{}
 		if err := yaml.Unmarshal(defaultConfig, a.cfg); err != nil {
 			return fmt.Errorf("decode default config: %w", err)
 		}
 	}
 
+	if err := a.buildConfig(imports); err != nil {
+		return err
+	}
+
+	if a.log.GetLevel() <= zerolog.DebugLevel {
+		a.log.Debug().Strs("imports", func() []string {
+			s := make([]string, 0, len(imports))
+			for k := range imports {
+				s = append(s, k)
+			}
+			return s
+		}()).Msg("imports")
+
+		b, err := yaml.Marshal(a.cfg)
+		if err != nil {
+			return fmt.Errorf("marshal config: %w", err)
+		}
+
+		a.log.Printf("config\n%s", string(b))
+	}
+
+	return nil
+}
+
+// buildConfig builds the configuration using imports.
+func (a *analyzer) buildConfig(imports map[string]struct{}) error {
 	i := 0
 	for _, rule := range a.cfg.Rules {
 		if rule.Disabled {
@@ -138,21 +194,9 @@ func (a *analyzer) init(imports map[string]struct{}) error {
 		a.cfg.Rules[i] = rule
 		i++
 	}
-
 	a.cfg.Rules = a.cfg.Rules[:i]
 
 	return nil
-}
-
-// String implements flag.Value.
-func (a *analyzer) String() string {
-	b, _ := yaml.Marshal(a.cfg)
-	return string(b)
-}
-
-// String implements flag.Value.
-func (a *analyzer) Set(file string) error {
-	return a.load(file)
 }
 
 func (a *analyzer) run(pass *analysis.Pass) (interface{}, error) {
@@ -175,6 +219,7 @@ func (a *analyzer) run(pass *analysis.Pass) (interface{}, error) {
 
 	if len(a.cfg.Rules) == 0 {
 		// No rules left so no need to check.
+		a.log.Print("no rules matched code")
 		return nil, nil //nolint: nilnil
 	}
 
@@ -187,6 +232,7 @@ func (a *analyzer) run(pass *analysis.Pass) (interface{}, error) {
 
 // visit evaluates node to ensure checking each rule.
 func (a *analyzer) visit(node ast.Node, push bool, stack []ast.Node) bool {
+	a.log.Trace().Str("node", fmt.Sprintf("%#v", node)).Msg("visit")
 	if !push {
 		return true
 	}
@@ -216,7 +262,13 @@ func (a *analyzer) visit(node ast.Node, push bool, stack []ast.Node) bool {
 
 // checkRule checks rule against given call.
 func (a *analyzer) checkRule(rule Rule, call *ast.CallExpr, sig *types.Signature, stack []ast.Node) {
-	if !rule.Call.matches(sig.Results()) {
+	match := rule.Call.matches(sig.Results())
+	a.log.Debug().
+		Str("rule", rule.Name).
+		Stringer("sig", sig).
+		Bool("match", match).
+		Msg("checkRule")
+	if !match {
 		return // Function call is not related to this rule.
 	}
 
@@ -225,7 +277,8 @@ func (a *analyzer) checkRule(rule Rule, call *ast.CallExpr, sig *types.Signature
 	stmts := restOfBlock(stack)
 	stmt, ok := stmts[0].(*ast.AssignStmt)
 	if !ok {
-		// First statement is not assignment so not checked.
+		// First statement is not assignment so not called.
+		a.log.Debug().Msg("return not assigned")
 		a.report(call, rule, "")
 		return
 	}
@@ -237,24 +290,31 @@ func (a *analyzer) checkRule(rule Rule, call *ast.CallExpr, sig *types.Signature
 
 	if len(stmts) < 2 {
 		// Call to the sql function is the last statement of the block.
+		a.log.Debug().Msg("no statements")
 		a.report(ident, rule, ident.Name)
 		return
 	}
 
 	// TODO(steve): avoid multiple passes.
 	for _, rule := range a.cfg.Rules {
-		if visit(a.pass, rule, ident, stmts) {
+		if visit(a.pass, a.log, rule, ident, stmts[1:]) {
 			continue
 		}
 		a.report(ident, rule, ident.Name)
 	}
 }
 
+// report reports a missing call for rule at rng for variable name.
 func (a *analyzer) report(rng analysis.Range, rule Rule, name string) {
+	name = rule.expects(name)
+	a.log.Debug().
+		Str("rule", rule.Name).
+		Str("name", name).
+		Msg("not called")
 	a.pass.Report(analysis.Diagnostic{
 		Pos:      rng.Pos(),
 		End:      rng.End(),
 		Category: rule.Severity,
-		Message:  fmt.Sprintf("%s must be called", rule.expects(name)),
+		Message:  fmt.Sprintf("%s must be called", name),
 	})
 }

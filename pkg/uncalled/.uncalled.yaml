@@ -1,5 +1,5 @@
 rules:
-  - name: sql.Rows
+  - name: sql.Rows.Err
     disabled: false
     severity: warning
     packages:
@@ -14,5 +14,21 @@ rules:
           pointer: false
     expect:
       method: .Err
+      result-index: 0
+      args: []
+  - name: http.Response.Body.Close
+    disabled: false
+    severity: warning
+    packages:
+      - net/http
+    call:
+      methods: []
+      results:
+        - type: .Response
+          pointer: true
+        - type: error
+          pointer: false
+    expect:
+      method: .Body.Close
       result-index: 0
       args: []
