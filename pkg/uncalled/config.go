@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
+	"os"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -20,6 +23,22 @@ type Config struct {
 	Rules []Rule
 }
 
+// loadConfig loads the analyzer config from file.
+func (c *Config) load(file string) error {
+	f, err := os.Open(file)
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+	defer f.Close()
+
+	dec := yaml.NewDecoder(f)
+	if err := dec.Decode(c); err != nil {
+		return fmt.Errorf("decode config: %q: %w", file, err)
+	}
+
+	return nil
+}
+
 // Rule represents an individual rule for uncalled Analyzer.
 type Rule struct {
 	Name     string
@@ -29,7 +48,8 @@ type Rule struct {
 	Call     Call
 	Expect   Expect
 
-	types map[string]struct{}
+	expectedCalls map[string]struct{}
+	expectedTypes map[string]struct{}
 }
 
 // expects returns the expected string based on ident.
@@ -55,14 +75,15 @@ func (r *Rule) validate() error {
 		return fmt.Errorf("rule %q: invalid call index %d for %d results", r.Name, r.Expect.ResultIndex, len(r.Call.Results))
 	}
 
-	r.types = make(map[string]struct{})
-	for _, res := range r.Call.Results {
-		if err := res.build(r); err != nil {
+	r.expectedCalls = make(map[string]struct{})
+	r.expectedTypes = make(map[string]struct{})
+	for i, res := range r.Call.Results {
+		if err := res.build(r, i); err != nil {
 			return err
 		}
 	}
 
-	if len(r.types) == 0 {
+	if len(r.expectedCalls) == 0 {
 		return fmt.Errorf("rule %q: no interested call results", r.Name)
 	}
 
@@ -109,17 +130,26 @@ type Result struct {
 type resultMatcher func(t types.Type) bool
 
 // build builds the matcher for this result.
-func (r *Result) build(rule *Rule) error {
-	matches := make(map[string]struct{}, len(rule.Packages))
-	for i, p := range rule.Packages {
+func (r *Result) build(rule *Rule, idx int) error {
+	resultTypes := make(map[string]struct{}, len(rule.Packages))
+	for _, p := range rule.Packages {
 		name := r.name(p)
-		if i == rule.Expect.ResultIndex {
-			if r.Type == anyType {
-				return fmt.Errorf("rule: %q is interesting and wildcard %q", rule.Name, r.Type)
-			}
-			rule.types[name] = struct{}{}
+		resultTypes[name] = struct{}{}
+		if idx != rule.Expect.ResultIndex {
+			continue
 		}
-		matches[name] = struct{}{}
+
+		// Expected result type.
+		if r.Type == anyType {
+			return fmt.Errorf("rule: %q is expected and wildcard %q", rule.Name, r.Type)
+		}
+
+		name += rule.Expect.Method
+		rule.expectedCalls[name] = struct{}{}
+
+		parts := strings.Split(name, ".")
+		name = strings.Join(parts[:len(parts)-1], ".")
+		rule.expectedTypes[name] = struct{}{}
 	}
 
 	r.match = func(t types.Type) bool {
@@ -131,7 +161,7 @@ func (r *Result) build(rule *Rule) error {
 			return true // Matches any type.
 		}
 
-		_, ok := matches[t.String()]
+		_, ok := resultTypes[t.String()]
 		return ok
 	}
 

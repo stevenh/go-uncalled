@@ -9,5 +9,13 @@ import (
 
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
-	analysistest.Run(t, testdata, uncalled.NewAnalyzer(), "a")
+	analysistest.Run(
+		t,
+		testdata,
+		uncalled.NewAnalyzer(
+			uncalled.TestWriter(t),
+		),
+		"./database/sql/rows/err",
+		"./net/http/request/body/close",
+	)
 }

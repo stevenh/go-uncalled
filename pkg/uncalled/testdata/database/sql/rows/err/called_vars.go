@@ -1,4 +1,4 @@
-package a
+package uncalled_test
 
 import (
 	"database/sql"
@@ -6,7 +6,7 @@ import (
 	"io"
 )
 
-func CheckedVars(db *sql.DB) {
+func CalledVars(db *sql.DB) {
 	rows, err := db.Query("") // OK
 	if err != nil {
 		// handle error

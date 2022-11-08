@@ -1,4 +1,4 @@
-package a
+package uncalled_test
 
 import (
 	"database/sql"
@@ -6,7 +6,7 @@ import (
 	"io/ioutil"
 )
 
-func RowsErrNotChecked(db *sql.DB) {
+func RowsErrNotCalled(db *sql.DB) {
 	rows, _ := db.Query("select id from tb") // want "rows.Err\\(\\) must be called"
 	for rows.Next() {
 		// Handle row.

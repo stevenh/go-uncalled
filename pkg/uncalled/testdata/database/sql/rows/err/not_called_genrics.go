@@ -1,21 +1,21 @@
 //go:build go1.18
 
-package a
+package uncalled_test
 
 import (
 	"database/sql"
 )
 
-var _ = NotCheckedGeneric[int64]
+var _ = NotCalledGeneric[int64]
 
-func NotCheckedGeneric[T ~int64](db *sql.DB, a T) {
+func NotCalledGeneric[T ~int64](db *sql.DB, a T) {
 	rows, _ := db.Query("select id from tb") // want "rows.Err\\(\\) must be called"
 	for rows.Next() {
 		// Handle row.
 	}
 }
 
-func NotCheckedGenericDefer[T ~int64](db *sql.DB, a T) {
+func NotCalledGenericDefer[T ~int64](db *sql.DB, a T) {
 	rows, _ := db.Query("select id from tb") // want "rows.Err\\(\\) must be called"
 	for rows.Next() {
 		// Handle row.
