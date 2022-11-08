@@ -1,34 +1,33 @@
+# Sets the default category used to report rules which don't specify one.
+default-category: uncalled
 rules:
-  - name: sql.Rows.Err
+  - name: sql-rows-err
     disabled: false
-    severity: warning
+    category: sql
     packages:
       - database/sql
       - github.com/jmoiron/sqlx
-    call:
-      methods: []
-      results:
-        - type: .Rows
-          pointer: true
-        - type: error
-          pointer: false
-    expect:
-      method: .Err
-      result-index: 0
-      args: []
-  - name: http.Response.Body.Close
+    methods: []
+    results:
+      - type: .Rows
+        pointer: true
+        expect:
+          call: .Err
+          args: []
+      - type: error
+        pointer: false
+  - name: http-response-body-close
     disabled: false
-    severity: warning
+    category: http
     packages:
       - net/http
-    call:
-      methods: []
-      results:
-        - type: .Response
-          pointer: true
-        - type: error
-          pointer: false
-    expect:
-      method: .Body.Close
-      result-index: 0
-      args: []
+    methods: []
+    results:
+      - type: .Response
+        pointer: true
+        expect:
+          call: .Body.Close
+          args: []
+      - type: error
+        pointer: false
+

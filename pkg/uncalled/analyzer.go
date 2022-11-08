@@ -262,7 +262,7 @@ func (a *analyzer) visit(node ast.Node, push bool, stack []ast.Node) bool {
 
 // checkRule checks rule against given call.
 func (a *analyzer) checkRule(rule Rule, call *ast.CallExpr, sig *types.Signature, stack []ast.Node) {
-	match := rule.Call.matches(sig.Results())
+	match := rule.matchesResults(sig.Results())
 	a.log.Debug().
 		Str("rule", rule.Name).
 		Stringer("sig", sig).
@@ -306,7 +306,11 @@ func (a *analyzer) checkRule(rule Rule, call *ast.CallExpr, sig *types.Signature
 
 // report reports a missing call for rule at rng for variable name.
 func (a *analyzer) report(rng analysis.Range, rule Rule, name string) {
-	name = rule.expects(name)
+	cat := a.cfg.DefaultCategory
+	if rule.Category != "" {
+		cat = rule.Category
+	}
+	name = rule.name(name)
 	a.log.Debug().
 		Str("rule", rule.Name).
 		Str("name", name).
@@ -314,7 +318,7 @@ func (a *analyzer) report(rng analysis.Range, rule Rule, name string) {
 	a.pass.Report(analysis.Diagnostic{
 		Pos:      rng.Pos(),
 		End:      rng.End(),
-		Category: rule.Severity,
+		Category: cat,
 		Message:  fmt.Sprintf("%s must be called", name),
 	})
 }
