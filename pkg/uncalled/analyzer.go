@@ -267,7 +267,7 @@ func (a *analyzer) checkRule(rule Rule, call *ast.CallExpr, sig *types.Signature
 		Str("rule", rule.Name).
 		Stringer("sig", sig).
 		Bool("match", match).
-		Msg("checkRule")
+		Msg("matchesResults")
 	if !match {
 		return // Function call is not related to this rule.
 	}
@@ -283,8 +283,10 @@ func (a *analyzer) checkRule(rule Rule, call *ast.CallExpr, sig *types.Signature
 		return
 	}
 
-	ident := rootIdent(stmt.Lhs[0])
+	node := stmt.Lhs[rule.expects.idx]
+	ident := rootIdent(node)
 	if ident == nil {
+		a.log.Error().Msgf("node %#v: nil root", node)
 		return // Not matching.
 	}
 

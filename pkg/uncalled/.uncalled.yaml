@@ -30,4 +30,18 @@ rules:
           args: []
       - type: error
         pointer: false
+  - name: context-cancel
+    disabled: false
+    category: context
+    packages:
+      - context
+    methods: []
+    results:
+      - type: .Context
+        pointer: false
+      - type: .CancelFunc
+        pointer: false
+        expect:
+          call:
+          args: []
 

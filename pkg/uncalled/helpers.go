@@ -16,12 +16,24 @@ func containsType(typ types.Type, rowTypes map[string]struct{}) bool {
 }
 
 // rootIdent finds the root identifier x in a chain of selections x.y.z, or nil if not found.
-func rootIdent(n ast.Node) *ast.Ident {
-	switch n := n.(type) {
+func rootIdent(node ast.Node) *ast.Ident {
+	switch node := node.(type) {
 	case *ast.SelectorExpr:
-		return rootIdent(n.X)
+		return rootIdent(node.X)
 	case *ast.Ident:
-		return n
+		return node
+	default:
+		return nil
+	}
+}
+
+// names returns all names a in chain of selections x.y.z, or nil if not found.
+func names(node ast.Node) []string {
+	switch node := node.(type) {
+	case *ast.SelectorExpr:
+		return append(names(node.X), node.Sel.String())
+	case *ast.Ident:
+		return []string{node.String()}
 	default:
 		return nil
 	}
