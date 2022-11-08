@@ -20,6 +20,11 @@ var defaultConfig []byte
 
 // Config represents the configuration for uncalled Analyzer.
 type Config struct {
+	// DefaultCategory is the default category used to report rules
+	// which don't specify one.
+	DefaultCategory string `yaml:"default-category" mapstructure:"default-category"`
+
+	// Rules are the rules to process, disabled rules will be skipped.
 	Rules []Rule
 }
 
@@ -41,24 +46,47 @@ func (c *Config) load(file string) error {
 
 // Rule represents an individual rule for uncalled Analyzer.
 type Rule struct {
-	Name     string
-	Disabled bool
-	Severity string
-	Packages []string
-	Call     Call
-	Expect   Expect
+	// Name is the name of the rule.
+	Name string
 
+	// Disable disables the processing of this rule if set to true.
+	Disabled bool
+
+	// Category is the category used to report failures for this rule.
+	Category string
+
+	// Packages is the list of package imports which to be considered
+	// When processing this rule. If one of the listed packages isn't
+	// imported by the code being checked the rule is automatically
+	// skipped. At least one package must be specified.
+	Packages []string
+
+	// Call represents the call to match to trigger rule processing.
+	// Methods is a list of method calls on the package which trigger
+	// the rule to be checked.
+	// TODO: Implemented.
+	Methods []string
+
+	// Results represents the results the matched methods return.
+	Results []*Result
+
+	// expects references the result which specifies a Method.
+	expects *Result
+
+	// expected calls is a map of fully qualified calls we expect.
 	expectedCalls map[string]struct{}
+
+	// expectedType is a map of fully qualifed types to monitor.
 	expectedTypes map[string]struct{}
 }
 
-// expects returns the expected string based on ident.
-func (r Rule) expects(ident string) string {
+// name returns the expected string based on ident.
+func (r Rule) name(ident string) string {
 	if ident == "" {
-		ident = strings.TrimLeft(r.Call.Results[r.Expect.ResultIndex].Type, ".")
+		ident = strings.TrimLeft(r.expects.Type, ".")
 	}
 
-	return fmt.Sprintf("%s%s(%s)", ident, r.Expect.Method, strings.Join(r.Expect.Args, ","))
+	return fmt.Sprintf("%s%s(%s)", ident, r.expects.Expect.Call, strings.Join(r.expects.Expect.Args, ","))
 }
 
 // build returns an error if r isn't valid, nil otherwise.
@@ -67,18 +95,27 @@ func (r *Rule) validate() error {
 		return fmt.Errorf("rule %q: no packages", r.Name)
 	}
 
-	if len(r.Call.Results) == 0 {
+	if len(r.Results) == 0 {
 		return fmt.Errorf("rule %q: no call results", r.Name)
 	}
 
-	if r.Expect.ResultIndex > len(r.Call.Results) {
-		return fmt.Errorf("rule %q: invalid call index %d for %d results", r.Name, r.Expect.ResultIndex, len(r.Call.Results))
+	for _, res := range r.Results {
+		if res.Expect != nil {
+			if r.expects != nil {
+				return fmt.Errorf("rule %q: more than one result expecting a method", r.Name)
+			}
+			r.expects = res
+		}
+	}
+
+	if r.expects == nil {
+		return fmt.Errorf("rule %q: no result expecting a method", r.Name)
 	}
 
 	r.expectedCalls = make(map[string]struct{})
 	r.expectedTypes = make(map[string]struct{})
-	for i, res := range r.Call.Results {
-		if err := res.build(r, i); err != nil {
+	for _, res := range r.Results {
+		if err := res.build(r); err != nil {
 			return err
 		}
 	}
@@ -90,25 +127,34 @@ func (r *Rule) validate() error {
 	return nil
 }
 
-// Call represents the call that results in the return a rule
-// checks for calls on.
-type Call struct {
-	Methods []string
-	Results []*Result
-}
-
-func (c Call) matches(res *types.Tuple) bool {
-	if res.Len() != len(c.Results) {
+// matchesResults returns true if the res matches the Results of this rule,
+// false otherwise.
+func (r *Rule) matchesResults(res *types.Tuple) bool {
+	if res.Len() != len(r.Results) {
 		return false // Function results length does match.
 	}
 
-	for i, r := range c.Results {
+	for i, r := range r.Results {
 		if !r.match(res.At(i).Type()) {
 			return false
 		}
 	}
 
 	return true
+}
+
+// matchesCall returns true if call and name match the expected call for
+// this rule, false otherwise.
+func (r *Rule) matchesCall(call *ast.CallExpr, name string) bool {
+	if len(call.Args) != len(r.expects.Expect.Args) {
+		return false
+	}
+
+	if strings.HasPrefix(r.expects.Expect.Call, ".") {
+		return r.expects.Expect.Call[1:] == name
+	}
+
+	return r.expects.Expect.Call == name
 }
 
 // Result is a result expected from a rule call.
@@ -123,6 +169,11 @@ type Result struct {
 	// the named TypeName.
 	Pointer bool
 
+	// Expect sets the expectation for the result.
+	// At least one Result in a rule must have a method specified.
+	// If not specified no check it performed.
+	Expect *Expect
+
 	match resultMatcher
 }
 
@@ -130,13 +181,13 @@ type Result struct {
 type resultMatcher func(t types.Type) bool
 
 // build builds the matcher for this result.
-func (r *Result) build(rule *Rule, idx int) error {
+func (r *Result) build(rule *Rule) error {
 	resultTypes := make(map[string]struct{}, len(rule.Packages))
 	for _, p := range rule.Packages {
 		name := r.name(p)
 		resultTypes[name] = struct{}{}
-		if idx != rule.Expect.ResultIndex {
-			continue
+		if r.Expect == nil {
+			continue // Not expecting a method on this result to be called.
 		}
 
 		// Expected result type.
@@ -144,7 +195,7 @@ func (r *Result) build(rule *Rule, idx int) error {
 			return fmt.Errorf("rule: %q is expected and wildcard %q", rule.Name, r.Type)
 		}
 
-		name += rule.Expect.Method
+		name += r.Expect.Call
 		rule.expectedCalls[name] = struct{}{}
 
 		parts := strings.Split(name, ".")
@@ -186,22 +237,14 @@ func (r Result) name(pkg string) string {
 	return fmt.Sprintf("%s%s", ptr, r.Type)
 }
 
-// Expect is the expected call for a Rule.
+// Expect represents a result call expectation.
 type Expect struct {
-	Method      string
-	ResultIndex int `yaml:"result-index" mapstructure:"result-index"`
-	Args        []string
-}
+	// Call is the call to expect on this result.
+	// Methods called on the result should start with a "."
+	// for example .Err
+	Call string
 
-// matches returns ture if call and name match this Expect, false otherwise.
-func (e Expect) matches(call *ast.CallExpr, name string) bool {
-	if len(call.Args) != len(e.Args) {
-		return false
-	}
-
-	if strings.HasPrefix(e.Method, ".") {
-		return e.Method[1:] == name
-	}
-
-	return e.Method == name
+	// Args are the arguments passed to the method.
+	// Currently on the count matters.
+	Args []string
 }

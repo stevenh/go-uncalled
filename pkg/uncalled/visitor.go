@@ -198,7 +198,7 @@ func (ec *visitor) visitCallExprIdent(call *ast.CallExpr, ident *ast.Ident) (w a
 func (ec *visitor) called(call *ast.CallExpr, sel *ast.SelectorExpr) (w ast.Visitor) {
 	parts := ec.selName(sel)
 	name := strings.Join(parts[1:], ".")
-	matches := ec.rule.Expect.matches(call, name)
+	matches := ec.rule.matchesCall(call, name)
 	ec.log.Debug().
 		Bool("matches", matches).
 		Str("sel", name).
