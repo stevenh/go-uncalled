@@ -18,6 +18,13 @@ const (
 //go:embed .uncalled.yaml
 var defaultConfig []byte
 
+// DefaultConfig returns the default embedded configuration.
+func DefaultConfig() *Config {
+	c := &Config{}
+	yaml.Unmarshal(defaultConfig, c) //nolint: errcheck
+	return c
+}
+
 // Config represents the configuration for uncalled Analyzer.
 type Config struct {
 	// DefaultCategory is the default category used to report rules
