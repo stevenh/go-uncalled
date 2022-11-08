@@ -32,52 +32,61 @@ uncalled ./...
 test/bad.go:10:2: rows.Err() must be called
 ```
 
-A custom configuration can be loaded using `-config <filename>`.
-
-The version can be checked with `-version`.
-
-By default it includes the rules in:
-[pkg/uncalled/.uncalled.yaml](pkg/uncalled/.uncalled.yaml)
+See [command line](#command-line) options for more details.
 
 ## Analyzer
 
 `uncalled` validates that code to ensure expected calls are made.
 
-Its default config checks calls to [database/sql](https://pkg.go.dev/database/sql) and similar packages, that obtain [Rows](https://pkg.go.dev/database/sql#Rows) calls [Rows.Err()](https://pkg.go.dev/database/sql#Rows.Err) as described by
+## Command line
 
-- [sql.Rows.Next](https://pkg.go.dev/database/sql#Rows.Next)
-- [sql.Rows.NextResultSet](https://pkg.go.dev/database/sql#Rows.NextResultSet)
+`uncalled` supports the following command line options
 
-The following code is wrong, as it should check [Rows.Err()](https://pkg.go.dev/database/sql#Rows.Err) after [Rows.Next()](https://pkg.go.dev/database/sql#Rows.Next) returns false.
+- `-config <file>` - configures the [YAML](https://yaml.org/) file to read the configuration from. (default: [embedded .uncalled.yaml](pkg/uncalled/.uncalled.yaml)).
+- `-version` - prints `uncalled` version information and exits.
+- `-verbose [level]` - configures `uncalled` logging level, without a level it increments, with a level it sets (default: `info`)
 
-```go
-rows, err := db.Query("select id from tb")
-if err != nil {
-    // Handle error.
-}
-for rows.Next() {
-    // Handle row.
-}
-// rows.Err() check should be here!
+
+## Rule Configuration
+
+Each rule is defined by the following common configuration.
+
+- name: `string` name of this rule.
+- disabled: `bool` disable this rule.
+- category: `string` category to log failures with.
+- packages: `[]string` list of package import paths that if present will trigger this rule to be processed.
+- methods: `[]string` list of methods that should be present to trigger this rule, empty means no restriction.
+- results: `[]object` list of results that methods return that if matched will trigger this rule to be processed.
+  - type: `string` name of the type relative to the package.
+  - pointer: `bool` if true this type is a pointer type.
+  - expect: `object` the details to expect when performaing checks.
+    - call: `string` the method that should be called on the returned type, blank if this is a direct function call.
+    - args: `[]string` the list of arguments that the call takes.
+
+Example
+
+```yaml
+rules:
+  # Checks for missing sql Rows.Err() calls.
+  - name: sql-rows-err
+    disabled: false
+    category: sql
+    packages:
+      - database/sql
+      - github.com/jmoiron/sqlx
+    methods: []
+    results:
+      - type: .Rows
+        pointer: true
+        expect:
+          call: .Err
+          args: []
+      - type: error
+        pointer: false
 ```
 
-This is how this code should be written.
+You can find more info in the [available rules](RULES.md#available-rules).
 
-```go
-rows, err := db.Query("select id from tb")
-if err != nil {
-    // Handle error.
-}
-for rows.Next() {
-    // Handle row.
-}
-if err = rows.Err(); err != nil {
-    // Handle error.
-}
-```
-
-`uncalled` helps uncover such errors which will result in incomplete data if an error is triggered while processing rows.
-This can happen when a connection becomes invalid, this causes [Rows.Next()](https://pkg.go.dev/database/sql#Rows.Next) or [sql.Rows.NextResultSet](https://pkg.go.dev/database/sql#Rows.NextResultSet) to return false without processing all rows.
 
 ## Inspired by
 
