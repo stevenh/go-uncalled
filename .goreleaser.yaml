@@ -31,7 +31,7 @@ release:
     <a name='{{.Tag}}'></a>
     ### {{.Tag}} Release Notes ({{.Date}})
   footer: |
-    [Full Changelog](https://github.com/stevenh/go-uncalled/cmd/uncalled/compare/{{ .PreviousTag }}...{{ .Tag }})
+    [Full Changelog](https://{{ .ModulePath }}/compare/{{ .PreviousTag }}...{{ .Tag }})
 changelog:
   use: github
   sort: asc
