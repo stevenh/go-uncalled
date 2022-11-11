@@ -12,7 +12,6 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -43,22 +42,20 @@ false without processing all rows.`
 // Option represents an Analyzer option.
 type Option func(*analyzer) error
 
-// ConfigFile is an Analyzer option which loads its config from file.
+// ConfigFile is an Analyzer option which loads and merges a config from file
+// to our default config.
 // Default: embedded config.
 func ConfigFile(file string) Option {
 	return func(a *analyzer) error {
-		return a.cfg.load(file)
+		return a.cfg.loadFile(file)
 	}
 }
 
-// ConfigOpt is an Analyzer option which specifies the config to use.
+// ConfigOpt is an Analyzer option which merges in cfg to our default config.
 // Default: embedded config.
 func ConfigOpt(cfg *Config) Option {
 	return func(a *analyzer) error {
-		// Take a copy so we don't alter the original.
-		cpy := *cfg
-		a.cfg = &cpy
-		return nil
+		return a.cfg.merge(cfg)
 	}
 }
 
@@ -77,12 +74,23 @@ func LogLevel(level string) Option {
 	}
 }
 
-// TestWriter is an Analyzer option which configures its
-// log to use t.
+// testWriter is an Analyzer option which configures its log to use t
+// and sets its log level to debug.
 // Default: os.Stderr.
-func TestWriter(t zerolog.TestingLog) Option {
+func testWriter(t zerolog.TestingLog) Option {
 	return func(a *analyzer) error {
-		a.log = a.log.Output(zerolog.TestWriter{T: t, Frame: 6})
+		a.log = a.log.Output(
+			newConsoleWriter(zerolog.TestWriter{T: t, Frame: 6}),
+		).Level(zerolog.DebugLevel)
+		return nil
+	}
+}
+
+// logger is an Analyzer option which sets its log.
+// Default: console writer to os.Stderr.
+func logger(log zerolog.Logger) Option {
+	return func(a *analyzer) error {
+		a.log = log
 		return nil
 	}
 }
@@ -93,19 +101,14 @@ func NewAnalyzer(options ...Option) *analysis.Analyzer {
 	l := &loader{
 		options: options,
 		log: log{
-			Logger: zerolog.New(
-				zerolog.ConsoleWriter{
-					Out: os.Stderr,
-					FormatTimestamp: func(any) string {
-						return ""
-					},
-				},
-			).Level(zerolog.InfoLevel).
+			Logger: zerolog.New(newConsoleWriter(os.Stderr)).
+				Level(zerolog.InfoLevel).
 				With().
 				Timestamp().
 				Logger(),
 		},
 	}
+
 	a := &analysis.Analyzer{
 		Name: name,
 		Doc:  doc,
@@ -119,63 +122,56 @@ func NewAnalyzer(options ...Option) *analysis.Analyzer {
 	a.Flags.Var(l, "config", "configuration file to load")
 	a.Flags.Var(version{}, "version", "print version and exit")
 	a.Flags.Var(&l.log, "verbose", "increases the log level")
+
 	return a
 }
 
 // analyzer checks for missing calls.
 type analyzer struct {
-	pass    *analysis.Pass
-	options []Option
-	cfg     *Config
-	log     zerolog.Logger
+	pass *analysis.Pass
+	cfg  *Config
+	log  zerolog.Logger
 }
 
-// init initialises r to check packages.
-func (a *analyzer) init(imports map[string]struct{}) error {
-	if a.cfg == nil {
-		// No config specified use default.
-		a.log.Debug().Msg("load default config")
-		a.cfg = &Config{}
-		if err := yaml.Unmarshal(defaultConfig, a.cfg); err != nil {
-			return fmt.Errorf("decode default config: %w", err)
+// newAnalyzer returns a new analyzer with options configured.
+func newAnalyzer(options ...Option) (*analyzer, error) {
+	cfg, err := loadDefaultConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	a := &analyzer{cfg: cfg}
+	for _, f := range options {
+		if err := f(a); err != nil {
+			return nil, err
 		}
 	}
 
-	if err := a.buildConfig(imports); err != nil {
-		return err
-	}
-
-	if a.log.GetLevel() <= zerolog.DebugLevel {
-		a.log.Debug().Strs("imports", func() []string {
-			s := make([]string, 0, len(imports))
-			for k := range imports {
-				s = append(s, k)
-			}
-			return s
-		}()).Msg("imports")
-
-		b, err := yaml.Marshal(a.cfg)
-		if err != nil {
-			return fmt.Errorf("marshal config: %w", err)
-		}
-
-		a.log.Printf("config\n%s", string(b))
-	}
-
-	return nil
+	return a, nil
 }
 
-// buildConfig builds the configuration using imports.
-func (a *analyzer) buildConfig(imports map[string]struct{}) error {
-	i := 0
-	for _, rule := range a.cfg.Rules {
-		if rule.Disabled {
-			continue
-		}
+// buildConfig builds the configuration for imports and
+// returns true if there are active rules, false otherwise.
+func (a *analyzer) buildConfig(imports []*types.Package) bool {
+	// Check if we import one of checked packages.
+	paths := make(map[string]struct{}, len(imports))
+	pathList := make([]string, len(imports))
+	for i, imp := range imports {
+		p := imp.Path()
+		pathList[i] = p
+		paths[p] = struct{}{}
+	}
 
+	rules := make([]Rule, 0, len(a.cfg.active))
+	for _, rule := range a.cfg.active {
+		rules = append(rules, rule)
+	}
+
+	active := make([]string, 0, len(a.cfg.active))
+	for _, rule := range rules {
 		j := 0
 		for _, p := range rule.Packages {
-			if _, ok := imports[p]; !ok {
+			if _, ok := paths[p]; !ok {
 				continue // Package wasn't imported.
 			}
 			rule.Packages[j] = p
@@ -184,19 +180,25 @@ func (a *analyzer) buildConfig(imports map[string]struct{}) error {
 		rule.Packages = rule.Packages[:j]
 
 		if len(rule.Packages) == 0 {
-			continue // Doesn't match any of our imported packages.
+			a.log.Debug().
+				Str("rule", rule.Name).
+				Msg("skip no matching packages")
+			delete(a.cfg.active, rule.Name)
+			continue
 		}
-
-		if err := rule.validate(); err != nil {
-			return err
-		}
-
-		a.cfg.Rules[i] = rule
-		i++
+		active = append(active, rule.Name)
 	}
-	a.cfg.Rules = a.cfg.Rules[:i]
 
-	return nil
+	a.log.Debug().Strs("imports", pathList).Msg("imports")
+	a.log.Debug().Strs("rules", active).Msg("active")
+	a.log.Trace().Msgf("config\n%s", a.cfg.string())
+
+	if len(a.cfg.active) == 0 {
+		a.log.Print("skip no active rules")
+		return false
+	}
+
+	return true
 }
 
 func (a *analyzer) run(pass *analysis.Pass) (interface{}, error) {
@@ -207,19 +209,8 @@ func (a *analyzer) run(pass *analysis.Pass) (interface{}, error) {
 		pkgs[imp.Path()] = struct{}{}
 	}
 
-	for _, f := range a.options {
-		if err := f(a); err != nil {
-			return nil, err
-		}
-	}
-
-	if err := a.init(pkgs); err != nil {
-		return nil, err
-	}
-
-	if len(a.cfg.Rules) == 0 {
+	if !a.buildConfig(pass.Pkg.Imports()) {
 		// No rules left so no need to check.
-		a.log.Print("no rules matched code")
 		return nil, nil //nolint: nilnil
 	}
 
@@ -253,7 +244,7 @@ func (a *analyzer) visit(node ast.Node, push bool, stack []ast.Node) bool {
 		return true // Call is not of the form x.f().
 	}
 
-	for _, rule := range a.cfg.Rules {
+	for _, rule := range a.cfg.active {
 		a.checkRule(rule, call, sig, stack)
 	}
 
@@ -298,7 +289,7 @@ func (a *analyzer) checkRule(rule Rule, call *ast.CallExpr, sig *types.Signature
 	}
 
 	// TODO(steve): avoid multiple passes.
-	for _, rule := range a.cfg.Rules {
+	for _, rule := range a.cfg.active {
 		if visit(a.pass, a.log, rule, ident, stmts[1:]) {
 			continue
 		}
@@ -308,10 +299,6 @@ func (a *analyzer) checkRule(rule Rule, call *ast.CallExpr, sig *types.Signature
 
 // report reports a missing call for rule at rng for variable name.
 func (a *analyzer) report(rng analysis.Range, rule Rule, name string) {
-	cat := a.cfg.DefaultCategory
-	if rule.Category != "" {
-		cat = rule.Category
-	}
 	name = rule.name(name)
 	a.log.Debug().
 		Str("rule", rule.Name).
@@ -320,7 +307,7 @@ func (a *analyzer) report(rng analysis.Range, rule Rule, name string) {
 	a.pass.Report(analysis.Diagnostic{
 		Pos:      rng.Pos(),
 		End:      rng.End(),
-		Category: cat,
+		Category: rule.Category,
 		Message:  fmt.Sprintf("%s must be called", name),
 	})
 }

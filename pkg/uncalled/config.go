@@ -1,11 +1,15 @@
 package uncalled
 
 import (
+	"bytes"
 	_ "embed"
 	"fmt"
 	"go/ast"
 	"go/types"
+	"io"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -15,37 +19,165 @@ const (
 	anyType = "_"
 )
 
+var (
+	// reName is pattern which validates rule names.
+	reName = regexp.MustCompile("^[a-z0-9-]+$")
+)
+
 //go:embed .uncalled.yaml
 var defaultConfig []byte
 
-// DefaultConfig returns a copy of the default embedded configuration.
-func DefaultConfig() Config {
-	c := Config{}
-	yaml.Unmarshal(defaultConfig, &c) //nolint: errcheck
-	return c
+// quote quotes s.
+func quote(s string) string {
+	if strconv.CanBackquote(s) {
+		return "`" + s + "`"
+	}
+	return strconv.Quote(s)
+}
+
+// loadDefaultConfig loads the default embedded configuration.
+func loadDefaultConfig() (*Config, error) {
+	cfg := &Config{}
+	if err := cfg.load(bytes.NewBuffer(defaultConfig)); err != nil {
+		return nil, fmt.Errorf("decode config %s: %w", quote(string(defaultConfig)), err)
+	}
+
+	return cfg, nil
 }
 
 // Config represents the configuration for uncalled Analyzer.
 type Config struct {
-	// DefaultCategory is the default category used to report rules
-	// which don't specify one.
-	DefaultCategory string `yaml:"default-category" mapstructure:"default-category"`
+	// DisableAll disables all rules.
+	DisableAll bool `yaml:"disable-all" mapstructure:"disable-all"`
+
+	// Disabled disables the given rules.
+	Disabled []string
+
+	// Enabled enables specific rules, in combination with disable all.
+	Enabled []string
 
 	// Rules are the rules to process, disabled rules will be skipped.
 	Rules []Rule
+
+	// rules lists all rules and their index in Rules.
+	rules map[string]Rule
+
+	// active lists active rules.
+	active map[string]Rule
 }
 
-// loadConfig loads the analyzer config from file.
-func (c *Config) load(file string) error {
+// loadFile loads the analyzer config from file.
+func (c *Config) loadFile(file string) error {
 	f, err := os.Open(file)
 	if err != nil {
+		// No file in wrap as thats in err already.
 		return fmt.Errorf("load config: %w", err)
 	}
 	defer f.Close()
 
-	dec := yaml.NewDecoder(f)
+	return c.load(f)
+}
+
+// load loads the analyzer config from r.
+func (c *Config) load(r io.Reader) error {
+	dec := yaml.NewDecoder(r)
 	if err := dec.Decode(c); err != nil {
-		return fmt.Errorf("decode config: %q: %w", file, err)
+		return fmt.Errorf("decode config: %q: %w", "file", err)
+	}
+
+	return c.validate()
+}
+
+// string returns a YAML string representation of c.
+// If an error occurs it is returned instead.
+func (c *Config) string() string {
+	s, err := c.yaml()
+	if err != nil {
+		return err.Error()
+	}
+
+	return string(s)
+}
+
+// yaml returns a yaml representation of c.
+func (c *Config) yaml() ([]byte, error) {
+	b, err := yaml.Marshal(c)
+	if err != nil {
+		return nil, fmt.Errorf("encode config: %w", err)
+	}
+	return b, nil
+}
+
+// copy returns a deep copy of c.
+func (c Config) copy() (*Config, error) {
+	cfg := c
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
+
+	return &cfg, nil
+}
+
+// merge merges other into c if not nil.
+func (c *Config) merge(other *Config) error {
+	if other == nil {
+		return nil
+	}
+
+	c.DisableAll = other.DisableAll
+	c.Disabled = other.Disabled
+	c.Enabled = other.Enabled
+
+	for _, otherRule := range other.Rules {
+		rule, ok := c.rules[otherRule.Name]
+		if ok {
+			// Existing rule overwrite.
+			c.Rules[rule.idx] = otherRule
+		} else {
+			// New rule append
+			c.Rules = append(c.Rules, otherRule)
+		}
+	}
+
+	return c.validate()
+}
+
+// validate validates the configuration.
+func (c *Config) validate() error {
+	c.active = make(map[string]Rule)
+	c.rules = make(map[string]Rule)
+	disabled := make(map[string]struct{})
+
+	for i, r := range c.Rules {
+		if err := r.validate(); err != nil {
+			return err
+		}
+
+		r.idx = i
+		if !c.DisableAll {
+			c.active[r.Name] = r
+		}
+		c.rules[r.Name] = r
+	}
+
+	for _, r := range c.Disabled {
+		if _, ok := c.rules[r]; !ok {
+			return fmt.Errorf("rule %q: in disabled unknown", r)
+		}
+		disabled[r] = struct{}{}
+		delete(c.active, r)
+	}
+
+	for _, name := range c.Enabled {
+		r, ok := c.rules[name]
+		if !ok {
+			return fmt.Errorf("rule %q: in enabled unknown", name)
+		}
+
+		if _, ok := disabled[name]; ok {
+			return fmt.Errorf("rule %q: in both enabled and disabled", name)
+		}
+		c.active[name] = r
 	}
 
 	return nil
@@ -55,9 +187,6 @@ func (c *Config) load(file string) error {
 type Rule struct {
 	// Name is the name of the rule.
 	Name string
-
-	// Disable disables the processing of this rule if set to true.
-	Disabled bool
 
 	// Category is the category used to report failures for this rule.
 	Category string
@@ -76,6 +205,9 @@ type Rule struct {
 
 	// Results represents the results the matched methods return.
 	Results []*Result
+
+	// idx represents the index at which this rule was in Config.Rules.
+	idx int
 
 	// expects references the result which specifies a Method.
 	expects *Result
@@ -96,20 +228,21 @@ func (r Rule) name(ident string) string {
 	return fmt.Sprintf("%s%s(%s)", ident, r.expects.Expect.Call, strings.Join(r.expects.Expect.Args, ","))
 }
 
-// build returns an error if r isn't valid, nil otherwise.
+// validate returns an error if r isn't valid, nil otherwise.
 func (r *Rule) validate() error {
-	if len(r.Packages) == 0 {
+	switch {
+	case !reName.MatchString(r.Name):
+		return fmt.Errorf("rule %q: contains non alpha numberic or uppercase charaters", r.Name)
+	case len(r.Packages) == 0:
 		return fmt.Errorf("rule %q: no packages", r.Name)
-	}
-
-	if len(r.Results) == 0 {
+	case len(r.Results) == 0:
 		return fmt.Errorf("rule %q: no call results", r.Name)
 	}
 
 	for i, res := range r.Results {
 		if res.Expect != nil {
 			if r.expects != nil {
-				return fmt.Errorf("rule %q: more than one result expecting a method", r.Name)
+				return fmt.Errorf("rule %q: multiple results expecting a method", r.Name)
 			}
 			res.idx = i
 			r.expects = res
@@ -126,10 +259,6 @@ func (r *Rule) validate() error {
 		if err := res.build(r); err != nil {
 			return err
 		}
-	}
-
-	if len(r.expectedCalls) == 0 {
-		return fmt.Errorf("rule %q: no interested call results", r.Name)
 	}
 
 	return nil
@@ -201,7 +330,7 @@ func (r *Result) build(rule *Rule) error {
 
 		// Expected result type.
 		if r.Type == anyType {
-			return fmt.Errorf("rule: %q is expected and wildcard %q", rule.Name, r.Type)
+			return fmt.Errorf("rule %q: result idx %d is expected and wildcard", rule.Name, r.idx)
 		}
 
 		name += r.Expect.Call

@@ -4,7 +4,6 @@ import (
 	"sync/atomic"
 
 	"golang.org/x/tools/go/analysis"
-	"gopkg.in/yaml.v3"
 )
 
 // loader creates a new analyser to process each call to its
@@ -20,13 +19,28 @@ type loader struct {
 
 // run creates an analyzer and calls run on it.
 func (l *loader) run(pass *analysis.Pass) (interface{}, error) {
-	a := &analyzer{
-		cfg:     l.cfg,
-		options: l.options,
-		log: l.log.
-			With().
-			Int32("id", l.id.Add(1)).
-			Logger(),
+	// Order of options is important, ours need to go first.
+	opts := make([]Option, 0, len(l.options)+2)
+	if l.cfg != nil {
+		// Take a copy to prevent data races.
+		cfg, err := l.cfg.copy()
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, ConfigOpt(cfg))
+	}
+
+	opts = append(opts, logger(l.log.
+		With().
+		Int32("id", l.id.Add(1)).
+		Logger(),
+	))
+
+	opts = append(opts, l.options...)
+
+	a, err := newAnalyzer(opts...)
+	if err != nil {
+		return nil, err
 	}
 
 	return a.run(pass)
@@ -34,12 +48,15 @@ func (l *loader) run(pass *analysis.Pass) (interface{}, error) {
 
 // String implements flag.Value.
 func (l *loader) String() string {
-	b, _ := yaml.Marshal(l.cfg)
-	return string(b)
+	if l.cfg == nil {
+		return ""
+	}
+
+	return l.cfg.string()
 }
 
 // String implements flag.Value.
 func (l *loader) Set(file string) error {
 	l.cfg = &Config{}
-	return l.cfg.load(file)
+	return l.cfg.loadFile(file)
 }

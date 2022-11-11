@@ -3,6 +3,8 @@ run:
   deadline: 5m
 
 linters-settings:
+  cyclop:
+    max-complexity: 11
 
 linters:
   enable-all: true
