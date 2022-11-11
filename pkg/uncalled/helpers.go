@@ -3,6 +3,9 @@ package uncalled
 import (
 	"go/ast"
 	"go/types"
+	"io"
+
+	"github.com/rs/zerolog"
 )
 
 // containsType returns true if typ not nil and contained in rowTypes, false otherwise.
@@ -54,4 +57,15 @@ func restOfBlock(stack []ast.Node) []ast.Stmt {
 	}
 
 	return nil
+}
+
+// newConsolwWriter returns a new zerolog.ConsoleWriter that writes to w with
+// timestamps disabled.
+func newConsoleWriter(w io.Writer) zerolog.ConsoleWriter {
+	return zerolog.ConsoleWriter{
+		Out: w,
+		FormatTimestamp: func(any) string {
+			return ""
+		},
+	}
 }

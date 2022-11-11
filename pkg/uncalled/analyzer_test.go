@@ -1,9 +1,8 @@
-package uncalled_test
+package uncalled
 
 import (
 	"testing"
 
-	"github.com/stevenh/go-uncalled/pkg/uncalled"
 	"golang.org/x/tools/go/analysis/analysistest"
 )
 
@@ -12,8 +11,8 @@ func Test(t *testing.T) {
 	analysistest.Run(
 		t,
 		testdata,
-		uncalled.NewAnalyzer(
-			uncalled.TestWriter(t),
+		NewAnalyzer(
+			testWriter(t),
 		),
 		"./context",
 		"./database/sql/rows/err",
