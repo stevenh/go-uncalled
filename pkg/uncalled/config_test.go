@@ -2,6 +2,7 @@ package uncalled
 
 import (
 	_ "embed"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -142,6 +143,61 @@ func TestConfig_validate(t *testing.T) {
 			}
 
 			require.NoError(t, err)
+		})
+	}
+}
+
+type copyRes struct {
+	cfg *Config
+	err error
+}
+
+func TestConfig_copy(t *testing.T) {
+	cfg, err := loadDefaultConfig()
+	require.NoError(t, err)
+
+	want, err := cfg.yaml()
+	require.NoError(t, err)
+
+	tests := map[string]struct {
+		cfg     Config
+		max     int
+		wantErr bool
+	}{
+		"race": {
+			cfg: *cfg,
+			max: 10,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := tt.cfg.validate()
+			require.NoError(t, err)
+
+			results := make(chan copyRes, tt.max)
+			hold := make(chan struct{})
+			var wg sync.WaitGroup
+			wg.Add(tt.max)
+			for i := 0; i < tt.max; i++ {
+				go func() {
+					defer wg.Done()
+					<-hold // Wait to unblock to maximise chance of race.
+					cfg, err := tt.cfg.copy()
+					results <- copyRes{cfg: cfg, err: err}
+				}()
+			}
+			go func() {
+				close(hold)
+				wg.Wait()
+				close(results)
+			}()
+			for r := range results {
+				require.NoError(t, r.err)
+
+				buf, err := r.cfg.yaml()
+				require.NoError(t, err)
+				require.Equal(t, want, buf)
+			}
 		})
 	}
 }
