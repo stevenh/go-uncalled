@@ -70,7 +70,7 @@ type Config struct {
 func (c *Config) loadFile(file string) error {
 	f, err := os.Open(file)
 	if err != nil {
-		// No file in wrap as thats in err already.
+		// No file in wrap as that's in err already.
 		return fmt.Errorf("load config: %w", err)
 	}
 	defer f.Close()
@@ -109,8 +109,19 @@ func (c *Config) yaml() ([]byte, error) {
 }
 
 // copy returns a deep copy of c.
-func (c Config) copy() (*Config, error) {
-	cfg := c
+func (c *Config) copy() (*Config, error) {
+	// Leverage yaml serialisation to create a deep copy.
+	data, err := c.yaml()
+	if err != nil {
+		return nil, err
+	}
+
+	var cfg Config
+	if err := cfg.load(bytes.NewBuffer(data)); err != nil {
+		return nil, err
+	}
+
+	// Validate after copy to ensure we don't cause any data races.
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
