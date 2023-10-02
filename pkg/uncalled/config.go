@@ -48,7 +48,7 @@ func loadDefaultConfig() (*Config, error) {
 // Config represents the configuration for uncalled Analyzer.
 type Config struct {
 	// DisableAll disables all rules.
-	DisableAll bool `yaml:"disable-all" mapstructure:"disable-all"`
+	DisableAll bool `mapstructure:"disable-all" yaml:"disable-all"`
 
 	// Disabled disables the given rules.
 	Disabled []string

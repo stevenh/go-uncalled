@@ -40,6 +40,9 @@ linters:
     - nosnakecase
     - deadcode
     - varcheck
+    # Disabled because they are add no value or result in false positives.
+    - depguard
+    - musttag
 
 issues:
   max-same-issues: 0
