@@ -56,7 +56,7 @@ func TestConfig_validate(t *testing.T) {
 					},
 				},
 			},
-			err: `rule "Bad Name": contains non alpha numberic or uppercase charaters`,
+			err: `rule "Bad Name": contains non alpha numeric or uppercase characters`,
 		},
 		"no-packages": {
 			cfg: Config{
