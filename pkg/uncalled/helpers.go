@@ -59,7 +59,7 @@ func restOfBlock(stack []ast.Node) []ast.Stmt {
 	return nil
 }
 
-// newConsolwWriter returns a new zerolog.ConsoleWriter that writes to w with
+// newConsoleWriter returns a new zerolog.ConsoleWriter that writes to w with
 // timestamps disabled.
 func newConsoleWriter(w io.Writer) zerolog.ConsoleWriter {
 	return zerolog.ConsoleWriter{

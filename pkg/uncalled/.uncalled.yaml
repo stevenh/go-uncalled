@@ -17,7 +17,7 @@ rules:
           args: []
       - type: error
         pointer: false
-  # Check for missing http Reponse.Body.Close() calls.
+  # Check for missing http Response.Body.Close() calls.
   - name: http-response-body-close
     disabled: false
     category: http

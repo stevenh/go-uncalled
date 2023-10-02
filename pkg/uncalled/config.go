@@ -211,7 +211,7 @@ type Rule struct {
 	// Call represents the call to match to trigger rule processing.
 	// Methods is a list of method calls on the package which trigger
 	// the rule to be checked.
-	// TODO: Implemented.
+	// TODO: Implement.
 	Methods []string
 
 	// Results represents the results the matched methods return.
@@ -226,7 +226,7 @@ type Rule struct {
 	// expected calls is a map of fully qualified calls we expect.
 	expectedCalls map[string]struct{}
 
-	// expectedType is a map of fully qualifed types to monitor.
+	// expectedType is a map of fully qualified types to monitor.
 	expectedTypes map[string]struct{}
 }
 
@@ -243,7 +243,7 @@ func (r Rule) name(ident string) string {
 func (r *Rule) validate() error {
 	switch {
 	case !reName.MatchString(r.Name):
-		return fmt.Errorf("rule %q: contains non alpha numberic or uppercase charaters", r.Name)
+		return fmt.Errorf("rule %q: contains non alpha numeric or uppercase characters", r.Name)
 	case len(r.Packages) == 0:
 		return fmt.Errorf("rule %q: no packages", r.Name)
 	case len(r.Results) == 0:
