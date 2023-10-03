@@ -46,7 +46,6 @@ See [command line](#command-line) options for more details.
 - `-version` - prints `uncalled` version information and exits.
 - `-verbose [level]` - configures `uncalled` logging level, without a level it increments, with a level it sets (default: `info`)
 
-
 ## Rule Configuration
 
 Each rule is defined by the following common configuration.
@@ -55,11 +54,10 @@ Each rule is defined by the following common configuration.
 - disabled: `bool` disable this rule.
 - category: `string` category to log failures with.
 - packages: `[]string` list of package import paths that if present will trigger this rule to be processed.
-- methods: `[]string` list of methods that should be present to trigger this rule, empty means no restriction.
 - results: `[]object` list of results that methods return that if matched will trigger this rule to be processed.
   - type: `string` name of the type relative to the package.
   - pointer: `bool` if true this type is a pointer type.
-  - expect: `object` the details to expect when performaing checks.
+  - expect: `object` the details to expect when performing checks.
     - call: `string` the method that should be called on the returned type, blank if this is a direct function call.
     - args: `[]string` the list of arguments that the call takes.
 
@@ -74,7 +72,6 @@ rules:
     packages:
       - database/sql
       - github.com/jmoiron/sqlx
-    methods: []
     results:
       - type: .Rows
         pointer: true
@@ -86,7 +83,6 @@ rules:
 ```
 
 You can find more info in the [available rules](RULES.md#available-rules).
-
 
 ## Inspired by
 

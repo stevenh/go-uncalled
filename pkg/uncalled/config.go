@@ -208,12 +208,6 @@ type Rule struct {
 	// skipped. At least one package must be specified.
 	Packages []string
 
-	// Call represents the call to match to trigger rule processing.
-	// Methods is a list of method calls on the package which trigger
-	// the rule to be checked.
-	// TODO: Implement.
-	Methods []string
-
 	// Results represents the results the matched methods return.
 	Results []*Result
 
